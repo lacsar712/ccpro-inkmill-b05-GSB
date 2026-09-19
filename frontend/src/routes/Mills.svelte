@@ -20,9 +20,10 @@
   async function load() {
     error = '';
     try {
+      // 拉含归档车间，表格名称才能解析；下拉默认仍只列启用车间
       [rows, workshops] = await Promise.all([
         api<Mill[]>('/mills'),
-        api<Workshop[]>('/workshops'),
+        api<Workshop[]>('/workshops?includeArchived=1'),
       ]);
     } catch (e) {
       error = e instanceof Error ? e.message : '加载失败';
@@ -35,9 +36,17 @@
     return workshops.find((w) => w.id === id)?.name || `#${id}`;
   }
 
+  // 下拉默认不含归档车间；编辑已属于归档车间的机台时保留当前选项
+  $: editingWorkshopId = editingId
+    ? rows.find((m) => m.id === editingId)?.workshopId ?? null
+    : null;
+  $: selectableWorkshops = workshops.filter(
+    (w) => !w.archived || w.id === editingWorkshopId,
+  );
+
   function reset() {
     form = {
-      workshopId: workshops[0] ? String(workshops[0].id) : '',
+      workshopId: selectableWorkshops[0] ? String(selectableWorkshops[0].id) : '',
       millCode: '',
       pigmentBase: '',
       bowlLiters: '25',
@@ -105,8 +114,8 @@
     <div class="field">
       <label>所属车间
         <select bind:value={form.workshopId}>
-          {#each workshops as w}
-            <option value={String(w.id)}>{w.name}</option>
+          {#each selectableWorkshops as w}
+            <option value={String(w.id)}>{w.name}{w.archived ? '（已归档）' : ''}</option>
           {/each}
         </select>
       </label>

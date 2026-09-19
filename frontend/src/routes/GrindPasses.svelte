@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../lib/api';
-  import type { GrindPass, Mill } from '../lib/types';
+  import type { GrindPass, Mill, Workshop } from '../lib/types';
 
   let rows: GrindPass[] = [];
   let mills: Mill[] = [];
+  let workshops: Workshop[] = [];
   let error = '';
   let editingId: number | null = null;
 
@@ -26,17 +27,30 @@
   async function load() {
     error = '';
     try {
-      [rows, mills] = await Promise.all([
+      [rows, mills, workshops] = await Promise.all([
         api<GrindPass[]>('/grind-passes'),
         api<Mill[]>('/mills'),
+        api<Workshop[]>('/workshops?includeArchived=1'),
       ]);
-      if (!form.millId && mills[0]) form.millId = String(mills[0].id);
+      const first = mills.find((m) => !archivedWorkshopIds().has(m.workshopId));
+      if (!form.millId && first) form.millId = String(first.id);
     } catch (e) {
       error = e instanceof Error ? e.message : '加载失败';
     }
   }
 
   onMount(load);
+
+  const archivedWorkshopIds = () =>
+    new Set(workshops.filter((w) => w.archived).map((w) => w.id));
+
+  // 新建下拉排除归档车间机台；编辑既有记录时保留其机台选项（历史数据仍可查改）
+  $: editingMillId = editingId
+    ? rows.find((r) => r.id === editingId)?.millId ?? null
+    : null;
+  $: selectableMills = mills.filter(
+    (m) => !archivedWorkshopIds().has(m.workshopId) || m.id === editingMillId,
+  );
 
   function millLabel(id: number): string {
     const m = mills.find((x) => x.id === id);
@@ -45,7 +59,7 @@
 
   function reset() {
     form = {
-      millId: mills[0] ? String(mills[0].id) : '',
+      millId: selectableMills[0] ? String(selectableMills[0].id) : '',
       startedAt: nowLocal(),
       passNo: '1',
       durationMin: '30',
@@ -125,7 +139,7 @@
     <div class="field">
       <label>研磨机
         <select bind:value={form.millId}>
-          {#each mills as m}
+          {#each selectableMills as m}
             <option value={String(m.id)}>{m.millCode}</option>
           {/each}
         </select>

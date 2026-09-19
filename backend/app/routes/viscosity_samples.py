@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required
 from app.database import SessionLocal
 from app.models.mill import Mill
 from app.models.viscosity_sample import ViscositySample
+from app.models.workshop import Workshop
 from app.serializers import viscosity_sample_json
 from app.utils import error, normalize_datetime
 
@@ -65,6 +66,11 @@ def create_sample():
 
     db = SessionLocal()
     try:
+        mill = db.get(Mill, int(body["millId"]))
+        workshop = db.get(Workshop, mill.workshop_id) if mill else None
+        if workshop and workshop.archived:
+            return error("车间已归档，禁止新建粘度取样", 409)
+
         row = ViscositySample(
             mill_id=int(body["millId"]),
             sampled_at=normalize_datetime(str(body["sampledAt"])),

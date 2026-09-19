@@ -22,7 +22,14 @@ def summary():
         since_24h = now - timedelta(hours=24)
         since_7d = now - timedelta(days=7)
 
-        workshop_total = db.scalar(select(func.count()).select_from(Workshop)) or 0
+        workshop_total = (
+            db.scalar(
+                select(func.count())
+                .select_from(Workshop)
+                .where(Workshop.archived.is_(False))
+            )
+            or 0
+        )
         grinding_mill_count = (
             db.scalar(
                 select(func.count()).select_from(Mill).where(Mill.status == "grinding")

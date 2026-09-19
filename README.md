@@ -30,11 +30,19 @@ MySQL 连接：`inkmill` / `inkmill` / `inkmill`（库名/用户/密码）
 
 ## 领域实体（JSON 驼峰）
 
-1. **Workshop**：`name`, `site`, `notes`
+1. **Workshop**：`name`, `site`, `notes`, `archived`（布尔，默认 `false`）。车间只归档、不物理删除，归档不会级联抹掉机台、取样或遍次。
 2. **Mill**：`workshopId`, `millCode`（同车间唯一）, `pigmentBase`, `bowlLiters`, `status`（`grinding` \| `idle` \| `wash`）
 3. **ViscositySample**：`millId`, `sampledAt`, `viscosityPaS`（须 &gt; 0，否则 HTTP 400）, `tempC`, `notes`
 4. **GrindPass**：`millId`, `startedAt`, `passNo`（≥ 1）, `durationMin`（&gt; 0）, `mediaType`, `operatorName`
-5. **Dashboard**：`workshopTotal`, `grindingMillCount`, `samplesLast24h`, `passesLast7d`
+5. **Dashboard**：`workshopTotal`（**不含已归档车间**）, `grindingMillCount`, `samplesLast24h`, `passesLast7d`
+
+### 车间归档
+
+- `GET /api/workshops` 默认只返回未归档车间；加 `includeArchived=1` 返回全部，每条带 `archived` 标记。
+- `POST /api/workshops/<id>/archive`、`POST /api/workshops/<id>/unarchive` 仅 `admin` 可调用；`grinder` 调用返回 **403** 中文错误。响应体在车间字段外另带 `millCount`（下属研磨机数量，有下属机台仍允许归档）。
+- `DELETE /api/workshops/<id>` 不做物理删除（返回 405 中文提示），请改用归档。
+- 已归档车间：禁止新建研磨机、禁止把已有研磨机改归属到该车间、禁止其下属机台新建粘度取样与研磨遍次，均返回 **409** 中文错误；既有机台、取样、遍次的 `GET` 查询与列表不受影响。
+- 解档后上述写入全部恢复。
 
 ## 快速启动（Docker）
 
@@ -71,6 +79,7 @@ set DB_PASSWORD=inkmill
 set DB_NAME=inkmill
 set JWT_SECRET=inkmill-jwt-secret-change-me
 python -c "from app.database import Base, engine; from app import models; Base.metadata.create_all(bind=engine)"
+python -c "from app.migrate import migrate; migrate()"
 python -c "from app.seed import seed; seed()"
 gunicorn wsgi:app --bind 127.0.0.1:9200 --reload
 ```

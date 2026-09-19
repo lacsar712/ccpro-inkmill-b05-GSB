@@ -13,31 +13,24 @@ from app.utils import error
 bp = Blueprint("mills", __name__, url_prefix="/api/mills")
 
 
-def _validate(body: dict) -> str | None:
+def _check_fields(body: dict) -> tuple[int | None, str | None]:
     workshop_id = int(body.get("workshopId") or 0)
     if workshop_id <= 0:
-        return "请选择所属车间"
+        return None, "请选择所属车间"
 
     mill_code = str(body.get("millCode", "")).strip()
     if not mill_code:
-        return "研磨机编号不能为空"
+        return None, "研磨机编号不能为空"
 
     pigment_base = str(body.get("pigmentBase", "")).strip()
     if not pigment_base:
-        return "色浆基料不能为空"
+        return None, "色浆基料不能为空"
 
     status = str(body.get("status") or "idle")
     if status not in MILL_STATUSES:
-        return "状态无效，应为 grinding / idle / wash"
+        return None, "状态无效，应为 grinding / idle / wash"
 
-    db = SessionLocal()
-    try:
-        if not db.get(Workshop, workshop_id):
-            return "所属车间不存在"
-    finally:
-        db.close()
-
-    return None
+    return workshop_id, None
 
 
 @bp.get("")
@@ -55,14 +48,20 @@ def list_mills():
 @jwt_required()
 def create_mill():
     body = request.get_json(silent=True) or {}
-    err = _validate(body)
-    if err:
-        return error(err, 400)
+    workshop_id, field_err = _check_fields(body)
+    if field_err:
+        return error(field_err, 400)
 
     db = SessionLocal()
     try:
+        workshop = db.get(Workshop, workshop_id)
+        if not workshop:
+            return error("所属车间不存在", 400)
+        if workshop.archived:
+            return error("车间已归档，禁止新建研磨机", 409)
+
         row = Mill(
-            workshop_id=int(body["workshopId"]),
+            workshop_id=workshop_id,
             mill_code=str(body["millCode"]).strip(),
             pigment_base=str(body["pigmentBase"]).strip(),
             bowl_liters=Decimal(str(body.get("bowlLiters", 0))),
@@ -84,9 +83,9 @@ def create_mill():
 @jwt_required()
 def update_mill(item_id: int):
     body = request.get_json(silent=True) or {}
-    err = _validate(body)
-    if err:
-        return error(err, 400)
+    workshop_id, field_err = _check_fields(body)
+    if field_err:
+        return error(field_err, 400)
 
     db = SessionLocal()
     try:
@@ -94,7 +93,14 @@ def update_mill(item_id: int):
         if not row:
             return error("研磨机不存在", 404)
 
-        row.workshop_id = int(body["workshopId"])
+        workshop = db.get(Workshop, workshop_id)
+        if not workshop:
+            return error("所属车间不存在", 400)
+        # 仅拦截“改归属到归档车间”；机台留在原归档车间内编辑其他字段不受此限
+        if workshop.archived and row.workshop_id != workshop_id:
+            return error("车间已归档，禁止把研磨机归属变更到该车间", 409)
+
+        row.workshop_id = workshop_id
         row.mill_code = str(body["millCode"]).strip()
         row.pigment_base = str(body["pigmentBase"]).strip()
         row.bowl_liters = Decimal(str(body.get("bowlLiters", 0)))

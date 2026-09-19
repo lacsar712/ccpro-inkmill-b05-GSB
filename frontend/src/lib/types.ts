@@ -12,6 +12,7 @@ export interface Workshop {
   name: string;
   site: string | null;
   notes: string | null;
+  archived: boolean;
 }
 
 export type MillStatus = 'grinding' | 'idle' | 'wash';
