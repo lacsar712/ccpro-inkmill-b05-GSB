@@ -12,37 +12,40 @@ from app.utils import error, normalize_datetime
 bp = Blueprint("grind_passes", __name__, url_prefix="/api/grind-passes")
 
 
-def _validate(body: dict) -> str | None:
+def _validate(body: dict, check_archived: bool = False):
     mill_id = int(body.get("millId") or 0)
     if mill_id <= 0:
-        return "请选择研磨机"
+        return "请选择研磨机", 400
 
     db = SessionLocal()
     try:
-        if not db.get(Mill, mill_id):
-            return "研磨机不存在"
+        mill = db.get(Mill, mill_id)
+        if not mill:
+            return "研磨机不存在", 400
+        if check_archived and mill.workshop and mill.workshop.archived:
+            return "研磨机所属车间已归档，禁止新建遍次", 409
     finally:
         db.close()
 
     started_at = str(body.get("startedAt", "")).strip()
     if not started_at:
-        return "开始时间不能为空"
+        return "开始时间不能为空", 400
 
     pass_no = int(body.get("passNo") or 0)
     if pass_no < 1:
-        return "遍次编号必须 ≥ 1"
+        return "遍次编号必须 ≥ 1", 400
 
     duration_min = float(body.get("durationMin") or 0)
     if duration_min <= 0:
-        return "研磨时长(分钟)必须大于 0"
+        return "研磨时长(分钟)必须大于 0", 400
 
     media_type = str(body.get("mediaType", "")).strip()
     if not media_type:
-        return "研磨介质不能为空"
+        return "研磨介质不能为空", 400
 
     operator_name = str(body.get("operatorName", "")).strip()
     if not operator_name:
-        return "操作员不能为空"
+        return "操作员不能为空", 400
 
     return None
 
@@ -66,9 +69,9 @@ def list_passes():
 @jwt_required()
 def create_pass():
     body = request.get_json(silent=True) or {}
-    err = _validate(body)
+    err = _validate(body, check_archived=True)
     if err:
-        return error(err, 400)
+        return error(err[0], err[1])
 
     db = SessionLocal()
     try:
@@ -94,7 +97,7 @@ def update_pass(item_id: int):
     body = request.get_json(silent=True) or {}
     err = _validate(body)
     if err:
-        return error(err, 400)
+        return error(err[0], err[1])
 
     db = SessionLocal()
     try:

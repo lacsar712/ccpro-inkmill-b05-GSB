@@ -12,25 +12,28 @@ from app.utils import error, normalize_datetime
 bp = Blueprint("viscosity_samples", __name__, url_prefix="/api/viscosity-samples")
 
 
-def _validate(body: dict) -> str | None:
+def _validate(body: dict, check_archived: bool = False):
     mill_id = int(body.get("millId") or 0)
     if mill_id <= 0:
-        return "请选择研磨机"
+        return "请选择研磨机", 400
 
     db = SessionLocal()
     try:
-        if not db.get(Mill, mill_id):
-            return "研磨机不存在"
+        mill = db.get(Mill, mill_id)
+        if not mill:
+            return "研磨机不存在", 400
+        if check_archived and mill.workshop and mill.workshop.archived:
+            return "研磨机所属车间已归档，禁止新建取样", 409
     finally:
         db.close()
 
     sampled_at = str(body.get("sampledAt", "")).strip()
     if not sampled_at:
-        return "取样时间不能为空"
+        return "取样时间不能为空", 400
 
     viscosity = float(body.get("viscosityPaS") or 0)
     if viscosity <= 0:
-        return "粘度(Pa·s)必须大于 0"
+        return "粘度(Pa·s)必须大于 0", 400
 
     return None
 
@@ -54,9 +57,9 @@ def list_samples():
 @jwt_required()
 def create_sample():
     body = request.get_json(silent=True) or {}
-    err = _validate(body)
+    err = _validate(body, check_archived=True)
     if err:
-        return error(err, 400)
+        return error(err[0], err[1])
 
     temp_raw = body.get("tempC")
     temp_c = None
@@ -86,7 +89,7 @@ def update_sample(item_id: int):
     body = request.get_json(silent=True) or {}
     err = _validate(body)
     if err:
-        return error(err, 400)
+        return error(err[0], err[1])
 
     temp_raw = body.get("tempC")
     temp_c = None

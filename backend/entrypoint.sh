@@ -27,6 +27,23 @@ PY
 echo "Creating tables..."
 python -c "from app.database import Base, engine; from app import models; Base.metadata.create_all(bind=engine)"
 
+echo "Ensuring schema upgrades..."
+python - <<'PY'
+from sqlalchemy import inspect, text
+from app.database import engine
+
+insp = inspect(engine)
+cols = [c["name"] for c in insp.get_columns("workshops")]
+if "archived" not in cols:
+    with engine.begin() as conn:
+        conn.execute(
+            text("ALTER TABLE workshops ADD COLUMN archived TINYINT(1) NOT NULL DEFAULT 0")
+        )
+    print("Added workshops.archived column.")
+else:
+    print("workshops.archived already present.")
+PY
+
 if [ "${SEED_ON_START}" = "true" ] || [ "${SEED_ON_START}" = "1" ]; then
   echo "Seeding data..."
   python -c "from app.seed import seed; seed()"

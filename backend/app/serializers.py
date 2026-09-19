@@ -29,6 +29,7 @@ def workshop_json(row: Workshop) -> dict:
         "name": row.name,
         "site": row.site,
         "notes": row.notes,
+        "archived": bool(row.archived),
     }
 
 

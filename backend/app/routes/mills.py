@@ -13,27 +13,32 @@ from app.utils import error
 bp = Blueprint("mills", __name__, url_prefix="/api/mills")
 
 
-def _validate(body: dict) -> str | None:
+def _validate(body: dict, current_workshop_id: int | None = None):
     workshop_id = int(body.get("workshopId") or 0)
     if workshop_id <= 0:
-        return "请选择所属车间"
+        return "请选择所属车间", 400
 
     mill_code = str(body.get("millCode", "")).strip()
     if not mill_code:
-        return "研磨机编号不能为空"
+        return "研磨机编号不能为空", 400
 
     pigment_base = str(body.get("pigmentBase", "")).strip()
     if not pigment_base:
-        return "色浆基料不能为空"
+        return "色浆基料不能为空", 400
 
     status = str(body.get("status") or "idle")
     if status not in MILL_STATUSES:
-        return "状态无效，应为 grinding / idle / wash"
+        return "状态无效，应为 grinding / idle / wash", 400
 
     db = SessionLocal()
     try:
-        if not db.get(Workshop, workshop_id):
-            return "所属车间不存在"
+        workshop = db.get(Workshop, workshop_id)
+        if not workshop:
+            return "所属车间不存在", 400
+        if workshop.archived and workshop_id != current_workshop_id:
+            if current_workshop_id is None:
+                return "所属车间已归档，禁止在该车间新建研磨机", 409
+            return "所属车间已归档，禁止将研磨机迁入该车间", 409
     finally:
         db.close()
 
@@ -57,7 +62,7 @@ def create_mill():
     body = request.get_json(silent=True) or {}
     err = _validate(body)
     if err:
-        return error(err, 400)
+        return error(err[0], err[1])
 
     db = SessionLocal()
     try:
@@ -83,10 +88,19 @@ def create_mill():
 @bp.put("/<int:item_id>")
 @jwt_required()
 def update_mill(item_id: int):
+    db = SessionLocal()
+    try:
+        row = db.get(Mill, item_id)
+        if not row:
+            return error("研磨机不存在", 404)
+        current_workshop_id = row.workshop_id
+    finally:
+        db.close()
+
     body = request.get_json(silent=True) or {}
-    err = _validate(body)
+    err = _validate(body, current_workshop_id=current_workshop_id)
     if err:
-        return error(err, 400)
+        return error(err[0], err[1])
 
     db = SessionLocal()
     try:

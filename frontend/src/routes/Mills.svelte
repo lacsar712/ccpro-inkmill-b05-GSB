@@ -22,7 +22,7 @@
     try {
       [rows, workshops] = await Promise.all([
         api<Mill[]>('/mills'),
-        api<Workshop[]>('/workshops'),
+        api<Workshop[]>('/workshops?includeArchived=1'),
       ]);
     } catch (e) {
       error = e instanceof Error ? e.message : '加载失败';
@@ -31,13 +31,19 @@
 
   onMount(load);
 
+  // 新建时下拉默认不出现归档车间；编辑时保留当前所属车间以便显示
+  $: workshopOptions = workshops.filter(
+    (w) => !w.archived || w.id === Number(form.workshopId),
+  );
+
   function workshopName(id: number): string {
     return workshops.find((w) => w.id === id)?.name || `#${id}`;
   }
 
   function reset() {
+    const firstActive = workshops.find((w) => !w.archived);
     form = {
-      workshopId: workshops[0] ? String(workshops[0].id) : '',
+      workshopId: firstActive ? String(firstActive.id) : '',
       millCode: '',
       pigmentBase: '',
       bowlLiters: '25',
@@ -105,8 +111,8 @@
     <div class="field">
       <label>所属车间
         <select bind:value={form.workshopId}>
-          {#each workshops as w}
-            <option value={String(w.id)}>{w.name}</option>
+          {#each workshopOptions as w}
+            <option value={String(w.id)}>{w.name}{w.archived ? '（已归档）' : ''}</option>
           {/each}
         </select>
       </label>

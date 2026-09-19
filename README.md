@@ -30,11 +30,24 @@ MySQL 连接：`inkmill` / `inkmill` / `inkmill`（库名/用户/密码）
 
 ## 领域实体（JSON 驼峰）
 
-1. **Workshop**：`name`, `site`, `notes`
+1. **Workshop**：`name`, `site`, `notes`, `archived`（归档标记，默认 `false`）
 2. **Mill**：`workshopId`, `millCode`（同车间唯一）, `pigmentBase`, `bowlLiters`, `status`（`grinding` \| `idle` \| `wash`）
 3. **ViscositySample**：`millId`, `sampledAt`, `viscosityPaS`（须 &gt; 0，否则 HTTP 400）, `tempC`, `notes`
 4. **GrindPass**：`millId`, `startedAt`, `passNo`（≥ 1）, `durationMin`（&gt; 0）, `mediaType`, `operatorName`
-5. **Dashboard**：`workshopTotal`, `grindingMillCount`, `samplesLast24h`, `passesLast7d`
+5. **Dashboard**：`workshopTotal`（**不含已归档车间**）, `grindingMillCount`, `samplesLast24h`, `passesLast7d`
+
+## 车间归档（软删除）
+
+车间不物理删除，改为归档标记；归档**不会**级联删除研磨机、取样或遍次，历史数据 GET 仍可查询。
+
+- `POST /api/workshops/<id>/archive`：归档车间。仅 admin 可调用（grinder 返回 403）；有下属研磨机时仍允许归档，响应带 `millCount`（下属研磨机数量）。
+- `POST /api/workshops/<id>/unarchive`：解档车间，仅 admin；解档后下述写入限制全部恢复。
+- `GET /api/workshops`：默认不含已归档车间；加 `?includeArchived=1` 返回全部并带 `archived` 标记。
+- 已归档车间的写入限制（均返回 **409** 中文错误）：
+  - 禁止在该车间新建研磨机；
+  - 禁止把已有研磨机改归属到该车间；
+  - 禁止该车间下属研磨机新建粘度取样、新建研磨遍次。
+- 仪表盘 `workshopTotal` 默认不计已归档车间。
 
 ## 快速启动（Docker）
 
